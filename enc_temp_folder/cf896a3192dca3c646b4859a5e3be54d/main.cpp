@@ -391,6 +391,8 @@ void client(bool selfHosted, int port) {
 			window.draw(playerWindowText);
 			playerCounter++;
 		}
+
+
 		drawChat(chat, window, text, font, textLine);
 	}
 }
