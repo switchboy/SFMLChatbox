@@ -165,60 +165,7 @@ void server(int port) {
 	}
 }
 
-sf::Packet interactWindow(std::vector<sf::Text>& chat, sf::RenderWindow& window, std::string& text, sf::Font& font) {
-	sf::Event event;
-	sf::Packet textPacket;
 
-	while (window.pollEvent(event)) {
-		switch (event.type) {
-		case sf::Event::KeyPressed:
-			if (event.key.code == sf::Keyboard::Escape || event.Closed) {
-				window.close();
-			}
-			else if (event.key.code == sf::Keyboard::Return) {
-				sf::Uint8 header = dataType::Text;
-				textPacket << header << text;
-				sf::Text displayText(text, font, 20);
-				displayText.setFillColor(sf::Color::Red);
-				chat.push_back(displayText);
-				text = "";
-			}
-			break;
-		case sf::Event::TextEntered:
-			if (event.text.unicode != '\b') {
-				if (event.text.unicode != '\r') {
-					text += event.text.unicode;
-				}
-			}
-			else {
-				if (!text.empty()) {
-					text.erase(text.size() - 1, 1);
-				}
-			}
-			break;
-		}
-	}
-	return textPacket;
-}
-
-void drawChat(std::vector<sf::Text>& chat, sf::RenderWindow& window, std::string& text, sf::Font& font, int textLine) {
-	for (sf::Text chatLine : chat) {
-		chatLine.setPosition(48, (textLine * 20)+ 490);
-		chatLine.setOutlineColor(sf::Color::Black);
-		chatLine.setOutlineThickness(2);
-		window.draw(chatLine);
-		textLine++;
-	}
-
-	sf::Text drawText(text, font, 20);
-	drawText.setFillColor(sf::Color::Green);
-	drawText.setOutlineColor(sf::Color::Black);
-	drawText.setOutlineThickness(2);
-	drawText.setPosition(48, 1010);
-	window.draw(drawText);
-
-	window.display();
-}
 
 void client(bool selfHosted, int port) {
 	std::vector<sf::Text>chat;
@@ -288,17 +235,33 @@ void client(bool selfHosted, int port) {
 	splashScreenTexture.loadFromFile("textures/SplashScreen.png");
 	splashScreenSprite.setTexture(splashScreenTexture);
 	splashScreenSprite.setPosition(0, 0);
-	sf::RectangleShape overlay, chatWindow, playerWindow;
+	sf::RectangleShape overlay, chatWindow, playerWindow, sendTextBackground, scrollBar;
 	overlay.setFillColor(sf::Color(95, 205, 228, 102));
 	overlay.setSize(sf::Vector2f(1920, 1080));
 	overlay.setPosition(0, 0);
 	chatWindow.setFillColor(sf::Color(46, 99, 110, 204));
 	chatWindow.setSize(sf::Vector2f(1200,545));
 	chatWindow.setPosition(45,490);
+	chatWindow.setOutlineThickness(2);
 	playerWindow.setFillColor(sf::Color(46, 99, 110, 204));
 	playerWindow.setSize(sf::Vector2f(1200, 400));
 	playerWindow.setPosition(45,45);
-
+	playerWindow.setOutlineThickness(2);
+	sendTextBackground.setFillColor(sf::Color(46, 99, 110, 204));
+	sendTextBackground.setSize(sf::Vector2f(1200, 25));
+	sendTextBackground.setOutlineThickness(2);
+	sendTextBackground.setOutlineColor(sf::Color::White);
+	sendTextBackground.setPosition(45, 1010);
+	scrollBar.setFillColor(sf::Color(46, 99, 110, 255));
+	scrollBar.setSize(sf::Vector2f(25, 25));
+	scrollBar.setOutlineThickness(2);
+	scrollBar.setOutlineColor(sf::Color::Black);
+	int minScrollPosition = 492;
+	int maxScrollPosition = 981;
+	int scrollSpace = 489;
+	int drawableLines = 25;
+	int lineOffSetByScrolling = 0;
+	
 	
 	while (window.isOpen()) {
 		unsigned textLine = 0;
@@ -307,11 +270,56 @@ void client(bool selfHosted, int port) {
 		window.draw(overlay);
 		window.draw(chatWindow);
 		window.draw(playerWindow);
-		sf::Packet potentialPacket = interactWindow(chat, window, text, font);
-		if (potentialPacket.getDataSize() != 0) {
-			socket.send(potentialPacket);
+		window.draw(sendTextBackground);
+		
+		sf::Event event;
+		sf::Packet textPacket;
+
+		while (window.pollEvent(event)) {
+			switch (event.type) {
+			case sf::Event::KeyPressed:
+				if (event.key.code == sf::Keyboard::Escape || event.Closed) {
+					window.close();
+				}
+				else if (event.key.code == sf::Keyboard::Return) {
+					sf::Uint8 header = dataType::Text;
+					textPacket << header << text;
+					socket.send(textPacket);
+					sf::Text displayText(text, font, 20);
+					displayText.setFillColor(sf::Color::Red);
+					chat.push_back(displayText);
+					text = "";
+				}
+				else if (event.key.code == sf::Keyboard::Up) {
+					if (chat.size() >= 25) {
+						lineOffSetByScrolling++;
+						if (lineOffSetByScrolling > chat.size()-25) {
+							lineOffSetByScrolling = chat.size()-24;
+						}
+					}
+				}if (event.key.code == sf::Keyboard::Down) {
+					if (chat.size() >= 25) {
+						lineOffSetByScrolling--;
+						if (lineOffSetByScrolling < 0) {
+							lineOffSetByScrolling = 0;
+						}
+					}
+				}
+				break;
+			case sf::Event::TextEntered:
+				if (event.text.unicode != '\b') {
+					if (event.text.unicode != '\r') {
+						text += event.text.unicode;
+					}
+				}
+				else {
+					if (!text.empty()) {
+						text.erase(text.size() - 1, 1);
+					}
+				}
+				break;
+			}
 		}
-		potentialPacket.clear();
 
 		//do network stuff here
 		sf::Packet recievePacket;
@@ -391,7 +399,35 @@ void client(bool selfHosted, int port) {
 			window.draw(playerWindowText);
 			playerCounter++;
 		}
-		drawChat(chat, window, text, font, textLine);
+
+		int lineCounter = 0;
+		for (sf::Text chatLine : chat) {
+			if (chat.size() < 25 || chat.size() - lineCounter - lineOffSetByScrolling < 25) {
+				if (textLine < 25) {
+					chatLine.setPosition(48, (textLine * 20) + 490);
+					chatLine.setOutlineColor(sf::Color::Black);
+					chatLine.setOutlineThickness(2);
+					window.draw(chatLine);
+					textLine++;
+				}
+			}
+			lineCounter++;
+		}
+
+		sf::Text drawText(text, font, 20);
+		drawText.setFillColor(sf::Color::Green);
+		drawText.setOutlineColor(sf::Color::Black);
+		drawText.setOutlineThickness(2);
+		drawText.setPosition(48, 1010);
+		window.draw(drawText);
+		float percentageOfScollMovement = static_cast<float>(lineOffSetByScrolling) / (static_cast<float>(chat.size()) - 25.f);
+		float yOffsetScrollbar = static_cast<float>(maxScrollPosition) - (percentageOfScollMovement * static_cast<float>(scrollSpace));
+		if (yOffsetScrollbar < minScrollPosition) {
+			yOffsetScrollbar = minScrollPosition;
+		}
+		scrollBar.setPosition(1218, floor(yOffsetScrollbar));
+		window.draw(scrollBar);
+		window.display();
 	}
 }
 
