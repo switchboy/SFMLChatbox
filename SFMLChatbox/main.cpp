@@ -4,10 +4,15 @@
 #include <iostream>
 #include <string>
 
-void server() {
-	std::cout << "Enter a port for listening" << std::endl;
-	int port;
-	std::cin >> port;
+enum dataType {
+	Text,
+	UserList,
+	MessageStatus,
+};
+
+void server(int port) {
+	const int maxClients = 2;
+	int clientsConnected = 0;
 	std::cout << "Server starting" << std::endl;
 
 	sf::TcpListener listener;
@@ -16,6 +21,7 @@ void server() {
 	bool done = false;
 
 	std::vector<sf::TcpSocket*> clients;
+	std::vector<std::string> clientNames;
 
 	while(listener.listen(port) != sf::Socket::Done) {
 		std::cout << "Failed to open port " << port << std::endl;
@@ -23,7 +29,6 @@ void server() {
 		std::cin >> port;
 		std::cout << "Server starting" << std::endl;
 	}
-
 
 	std::cout << "listening on port: " << port << std::endl;
 
@@ -33,18 +38,63 @@ void server() {
 	while (!done) {
 		if (selector.wait()) {
 			if (selector.isReady(listener)) {
-				sf::TcpSocket* socket = new sf::TcpSocket;
-				listener.accept(*socket);
-				sf::Packet packet;
-				std::string id;
+				if (clientsConnected < maxClients) {
+					sf::TcpSocket* socket = new sf::TcpSocket;
+					listener.accept(*socket);
+					sf::Packet packet;
+					std::string id;
 
-				if (socket->receive(packet) == sf::Socket::Done) {
-					packet >> id;
+					if (socket->receive(packet) == sf::Socket::Done) {
+						packet >> id;
+					}
+
+					clientsConnected++;
+
+					sf::Packet succesFullJoin;
+					bool joinSuccesFull = true;
+					succesFullJoin << joinSuccesFull;
+					socket->send(succesFullJoin);
+
+
+					sf::Packet newUserJoined;
+					int i = -1;
+					std::string newUserText = id + " had joined the server!";
+					sf::Uint8 header = dataType::Text;
+
+					newUserJoined << header << i << newUserText;
+					for (sf::TcpSocket* client : clients) {
+						client->send(newUserJoined);
+					}
+
+					newUserJoined.clear();
+					std::string welcomeText = "Welcome to the server " + id + "!";
+					newUserJoined << header << i << welcomeText;
+					socket->send(newUserJoined);
+					std::cout << id << " from " << socket->getRemoteAddress() << " has connected!" << std::endl;
+					clients.push_back(socket);
+					clientNames.push_back(id);
+					selector.add(*socket);
+
+					sf::Packet userListPacket;
+					sf::Uint8 userListPacketHeader = dataType::UserList;
+					userListPacket << userListPacketHeader << static_cast<int>(clients.size());
+					for (std::string& username : clientNames) {
+						userListPacket << username;
+					}
+					for (sf::TcpSocket* client : clients) {
+						client->send(userListPacket);
+					}
+
 				}
-
-				std::cout << id << " from "<< socket->getRemoteAddress() <<" has connected!" << std::endl;
-				clients.push_back(socket);
-				selector.add(*socket);
+				else {
+					sf::TcpSocket tempSocket;
+					listener.accept(tempSocket);
+					sf::Packet succesFullJoin;
+					bool joinSuccesFull = false;
+					succesFullJoin << joinSuccesFull;
+					tempSocket.send(succesFullJoin);
+					tempSocket.disconnect();
+				}
 			}
 			else {
 				std::vector<int> clientsDisconnected;
@@ -52,51 +102,127 @@ void server() {
 					if (selector.isReady(*clients[i])) {
 						sf::Packet packet, sendPacket, confirmPacket;
 						if (clients[i]->receive(packet) == sf::Socket::Done) {
-							std::string text;
-							packet >> text;
-							sendPacket << text;
-							std::cout << text << std::endl;
+							sf::Uint8 recievedHeader;
+							packet >> recievedHeader;
+							switch (recievedHeader) {
+							case dataType::Text:
+								std::string text;
+								packet >> text;
+								sf::Uint8 header = dataType::Text;
+								sendPacket << header << i << text;
+								for (int j = 0; j < clients.size(); j++) {
+									if (i != j) {
+										clients[j]->send(sendPacket);
+									}
+								}
+								sf::Uint8 headerCFM = dataType::MessageStatus;
+								bool isSentToAll = true;
+								confirmPacket << headerCFM << isSentToAll;
+								clients[i]->send(confirmPacket);
+								break;
+							} 
+						}
+						else if (clients[i]->receive(packet) == sf::Socket::Disconnected) {
+							clientsDisconnected.push_back(i);
+							sf::Uint8 header = dataType::Text;
+							int i = -1;
+							std::string text = clientNames[i] +" disconnected!";
+							sendPacket << header << -1 << text;
 							for (int j = 0; j < clients.size(); j++) {
 								if (i != j) {
 									clients[j]->send(sendPacket);
 								}
 							}
-							std::string confirmMsg = "ServerConfirmed123";
-							confirmPacket << confirmMsg;
-							clients[i]->send(confirmPacket);
-						}
-						else if (clients[i]->receive(packet) == sf::Socket::Disconnected) {
-							clientsDisconnected.push_back(i);
-							std::cout << clients[i]->getRemoteAddress() << " disconnected!" << std::endl;
 						}
 					}
 				}
 				for (int& clientId : clientsDisconnected) {
-					//delete clients[clientId];
 					clients.erase(clients.begin() + clientId);
+					clientNames.erase(clientNames.begin() + clientId);
+					clientsConnected--;
 				}
 			}
 		}
 	}
 }
 
-void client() {
-	std::cout << "Enter ip of the server to connect to" << std::endl;
+sf::Packet interactWindow(std::vector<sf::Text>& chat, sf::RenderWindow& window, std::string& text, sf::Font& font) {
+	sf::Event event;
+	sf::Packet textPacket;
+
+	while (window.pollEvent(event)) {
+		switch (event.type) {
+		case sf::Event::KeyPressed:
+			if (event.key.code == sf::Keyboard::Escape || event.Closed) {
+				window.close();
+			}
+			else if (event.key.code == sf::Keyboard::Return) {
+				sf::Uint8 header = dataType::Text;
+				textPacket << header << text;
+				sf::Text displayText(text, font, 20);
+				displayText.setFillColor(sf::Color::Red);
+				chat.push_back(displayText);
+				text = "";
+			}
+			break;
+		case sf::Event::TextEntered:
+			if (event.text.unicode != '\b') {
+				if (event.text.unicode != '\r') {
+					text += event.text.unicode;
+				}
+			}
+			else {
+				if (!text.empty()) {
+					text.erase(text.size() - 1, 1);
+				}
+			}
+			break;
+		}
+	}
+	return textPacket;
+}
+
+void drawChat(std::vector<sf::Text>& chat, sf::RenderWindow& window, std::string& text, sf::Font& font, int textLine) {
+	for (sf::Text chatLine : chat) {
+		chatLine.setPosition(3, textLine * 20);
+		chatLine.setOutlineColor(sf::Color::Black);
+		chatLine.setOutlineThickness(2);
+		window.draw(chatLine);
+		textLine++;
+	}
+
+	sf::Text drawText(text, font, 20);
+	drawText.setFillColor(sf::Color::Green);
+	drawText.setOutlineColor(sf::Color::Black);
+	drawText.setOutlineThickness(2);
+	drawText.setPosition(3, 575);
+	window.draw(drawText);
+
+	window.display();
+}
+
+void client(bool selfHosted, int port) {
+	std::vector<sf::Text>chat;
 	std::string ipString;
-	std::cin >> ipString;
-
-	int port;
-	std::cout << "Enter a port to connect to" << std::endl;
-	std::cin >> port;
-
-	sf::IpAddress ip = sf::IpAddress(ipString);
-	sf::TcpSocket socket;
-	
 	std::string id;
 	std::string text = "";
+	std::vector<std::string> userList;
+
+	if (selfHosted) {
+		ipString = "127.0.0.1";
+	}
+	else {	
+		std::cout << "Enter ip of the server to connect to" << std::endl;
+		std::cin >> ipString;
+		std::cout << "Enter a port to connect to" << std::endl;
+		std::cin >> port;
+	}
 
 	std::cout << "Enter nickname" << std::endl;
 	std::cin >> id;
+
+	sf::IpAddress ip = sf::IpAddress(ipString);
+	sf::TcpSocket socket;
 
 	while(socket.connect(ip, port) == sf::Socket::Error) {
 		std::cout << "Unable to connect!" << std::endl;
@@ -106,58 +232,57 @@ void client() {
 		std::cin >> port;
 	}
 
-	sf::RenderWindow window(sf::VideoMode(800, 600, 32), "ChatApp");
-	std::vector<sf::Text>chat;
-
 	sf::Packet packet;
 	packet << id;
 	socket.send(packet);
+
+	socket.setBlocking(true);
+	bool succesfullJoin;
+	sf::Packet joinPacket;
+	socket.receive(joinPacket);
+	joinPacket >> succesfullJoin;
+	if (!succesfullJoin) {
+		std::cout << "Could not join server, because the sever is full!" << std::endl;
+		std::cout << "Enter ip of the server to connect to" << std::endl;
+		std::cin >> ipString;
+		std::cout << "Enter a port to connect to" << std::endl;
+		std::cin >> port;
+		while (socket.connect(ip, port) == sf::Socket::Error) {
+			std::cout << "Unable to connect!" << std::endl;
+			std::cout << "Enter ip of the server to connect to" << std::endl;
+			std::cin >> ipString;
+			std::cout << "Enter a port to connect to" << std::endl;
+			std::cin >> port;
+		}
+	}
+
+	sf::RenderWindow window(sf::VideoMode(800, 600, 32), "ChatApp");
+
 	socket.setBlocking(false);
 
 	sf::Font font;
 	font.loadFromFile("fonts/SatellaRegular.ttf");
 
+	
 	while (window.isOpen()) {
-		window.clear();
-		sf::Event event;
-
-		while (window.pollEvent(event)) {
-			switch (event.type) {
-			case sf::Event::KeyPressed:
-				if (event.key.code == sf::Keyboard::Escape || event.Closed) {
-					window.close();
-				}
-				else if (event.key.code == sf::Keyboard::Return) {
-					sf::Packet textPacket;
-					textPacket << id + ": " + text;
-					socket.send(textPacket);
-					sf::Text displayText(text, font, 20);
-					displayText.setFillColor(sf::Color::Red);
-					chat.push_back(displayText);
-					text = "";
-				}
-				break;
-			case sf::Event::TextEntered:
-				if (event.text.unicode != '\b' ) {
-					if (event.text.unicode != '\r') {
-						text += event.text.unicode;
-					}
-				}
-				else {
-					if (!text.empty()) {
-						text.erase(text.size() - 1, 1);
-					}
-				}
-				break;
-			}
+		window.clear(sf::Color::White);
+		
+		sf::Packet potentialPacket = interactWindow(chat, window, text, font);
+		if (potentialPacket.getDataSize() != 0) {
+			socket.send(potentialPacket);
 		}
+		potentialPacket.clear();
 
+		//do network stuff here
 		unsigned textLine = 0;
 		sf::Packet recievePacket;
-		if (socket.receive(recievePacket) == sf::Socket::Disconnected) {
+		sf::Socket::Status statusOfSocket = socket.receive(recievePacket);
+		if (statusOfSocket == sf::Socket::Disconnected) {
 			//complain
 			sf::Text drawText("CONNECTION LOST!!!", font, 20);
 			drawText.setFillColor(sf::Color::Red);
+			drawText.setOutlineColor(sf::Color::Black);
+			drawText.setOutlineThickness(2);
 			drawText.setPosition(3, textLine);
 			window.draw(drawText);
 			textLine++;
@@ -168,35 +293,49 @@ void client() {
 			socket.send(reconnectPacket);
 			socket.setBlocking(false);
 		}
-
-		std::string recievedText;
-		bool recievedAndRelayed;
-		if (recievePacket >> recievedText) {
-			if (recievedText == "ServerConfirmed123") {
-				chat.back().setFillColor(sf::Color::White);
-			}
-			else {
-				sf::Text displayText(recievedText, font, 20);
-				displayText.setFillColor(sf::Color::Blue);
-				chat.push_back(displayText);
+		else if (statusOfSocket == sf::Socket::Done) {
+			sf::Uint8 recievedHeader;
+			recievePacket >> recievedHeader;
+			switch (recievedHeader) {
+				case dataType::Text:
+				{
+					std::string recievedText;
+					int userId;
+					recievePacket >> userId;
+					recievePacket >> recievedText;
+					
+					if (userId == -1) {
+						sf::Text displayText("*** " + recievedText, font, 20);
+						displayText.setFillColor(sf::Color::Yellow);
+						chat.push_back(displayText);
+					}
+					else {
+						sf::Text displayText(userList[userId] + ": " + recievedText, font, 20);
+						displayText.setFillColor(sf::Color::Blue);
+						chat.push_back(displayText);
+					}
+					break;
+				}
+				case dataType::MessageStatus:
+					bool relayed;
+					recievePacket >> relayed;
+					if (relayed) {
+						chat.back().setFillColor(sf::Color::White);
+					}
+					break;
+				case dataType::UserList:
+					userList.clear();
+					int numberOfUsers;
+					recievePacket >> numberOfUsers;
+					for (int i = 0; i < numberOfUsers; i++) {
+						std::string tempString;
+						recievePacket >> tempString;
+						userList.push_back(tempString);
+					}
+					break;
 			}
 		}
-
-
-
-		
-		for (sf::Text chatLine : chat) {
-			chatLine.setPosition(3, textLine * 20);
-			window.draw(chatLine);
-			textLine++;
-		}
-
-		sf::Text drawText(text, font, 20);
-		drawText.setFillColor(sf::Color::Green);
-		drawText.setPosition(3, textLine * 20);
-		window.draw(drawText);
-
-		window.display();
+		drawChat(chat, window, text, font, textLine);
 	}
 }
 
@@ -207,10 +346,14 @@ int main()
 	std::cin >> whutDo;
 
 	if (whutDo == "s" || whutDo == "S") {
-		server();
+		std::cout << "Enter a port for listening" << std::endl;
+		int port;
+		std::cin >> port;
+		sf::Thread serverThread(&server, port);
+		serverThread.launch();
+		client(true, port);
 	}
 	else if (whutDo == "c" || whutDo == "C") {
-		client();
+		client(false, 0);
 	}
-
 }
