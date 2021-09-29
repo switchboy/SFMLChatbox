@@ -194,6 +194,15 @@ void server(int port) {
 					for (connectedPlayers& client : clients) {
 						client.playerSocket->send(userListPacket);
 					}
+					sf::Packet sendPacket;
+					sf::Uint8 header = dataType::playerReady;
+					sendPacket << header;
+					for (int i = 0; i < clients.size(); i++) {
+						sendPacket << clients[i].isReady;
+					}
+					for (int j = 0; j < clients.size(); j++) {
+						clients[j].playerSocket->send(sendPacket);
+					}
 				}
 
 				if (serverTime.asMilliseconds() > lastPingSent + 100) {
