@@ -202,7 +202,7 @@ void client(bool selfHosted, int port) {
 	splashScreenTexture.loadFromFile("textures/SplashScreen.png");
 	splashScreenSprite.setTexture(splashScreenTexture);
 	splashScreenSprite.setPosition(0, 0);
-	sf::RectangleShape overlay, chatWindow, playerWindow, sendTextBackground, scrollBar;
+	sf::RectangleShape overlay, chatWindow, playerWindow, sendTextBackground, scrollBar, sendButtonRect;
 	overlay.setFillColor(sf::Color(95, 205, 228, 102));
 	overlay.setSize(sf::Vector2f(1920, 1080));
 	overlay.setPosition(0, 0);
@@ -214,11 +214,6 @@ void client(bool selfHosted, int port) {
 	playerWindow.setSize(sf::Vector2f(1200, 400));
 	playerWindow.setPosition(45, 45);
 	playerWindow.setOutlineThickness(2);
-	sendTextBackground.setFillColor(sf::Color(46, 99, 110, 204));
-	sendTextBackground.setSize(sf::Vector2f(1200, 25));
-	sendTextBackground.setOutlineThickness(2);
-	sendTextBackground.setOutlineColor(sf::Color::White);
-	sendTextBackground.setPosition(45, 1010);
 	scrollBar.setFillColor(sf::Color(46, 99, 110, 255));
 	scrollBar.setSize(sf::Vector2f(25, 25));
 	scrollBar.setOutlineThickness(2);
@@ -244,6 +239,22 @@ void client(bool selfHosted, int port) {
 	pingPacket << pingPacketHeader;
 	sf::Font font;
 	font.loadFromFile("fonts/SatellaRegular.ttf");
+	sf::Text sendButton("Send", font, 20);
+	sendButton.setOutlineColor(sf::Color::Black);
+	sendButton.setOutlineThickness(2);
+	sendButton.setFillColor(sf::Color::White);
+	sendButton.setPosition(1245 - sendButton.getLocalBounds().width, 1010);
+	sendTextBackground.setFillColor(sf::Color(46, 99, 110, 204));
+	sendTextBackground.setSize(sf::Vector2f(1195 - sendButton.getLocalBounds().width, 25));
+	sendTextBackground.setOutlineThickness(2);
+	sendTextBackground.setOutlineColor(sf::Color::White);
+	sendTextBackground.setPosition(45, 1010);
+	sendButtonRect.setFillColor(sf::Color(46, 99, 110, 204));
+	sendButtonRect.setSize(sf::Vector2f(sendButton.getLocalBounds().width+1, 25));
+	sendButtonRect.setOutlineThickness(2);
+	sendButtonRect.setOutlineColor(sf::Color::White);
+	sendButtonRect.setPosition(1243 - sendButton.getLocalBounds().width, 1010);
+
 	bool textAreaSelected = false;
 
 	if (selfHosted) {
@@ -330,6 +341,15 @@ void client(bool selfHosted, int port) {
 			}
 		}
 
+		if (sendButton.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+			sendButton.setFillColor(sf::Color::Yellow);
+			sendButtonRect.setOutlineColor(sf::Color::Yellow);
+		}
+		else {
+			sendButton.setFillColor(sf::Color::White);
+			sendButtonRect.setOutlineColor(sf::Color::White);
+		}
+
 		sf::Event event;
 		while (window.pollEvent(event)) {
 			switch (event.type) {
@@ -382,6 +402,14 @@ void client(bool selfHosted, int port) {
 									lineOffSetByScrolling = 0;
 								}
 							}
+							textAreaSelected = false;
+						}
+						else if(sendButton.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+							sf::Packet textPacket;
+							sf::Uint8 header = dataType::Text;
+							textPacket << header << text;
+							socket.send(textPacket);
+							text = "";
 							textAreaSelected = false;
 						}
 						else {
@@ -543,7 +571,8 @@ void client(bool selfHosted, int port) {
 		drawText.setOutlineThickness(2);
 		drawText.setPosition(48, 1010);
 		window.draw(drawText);
-
+		window.draw(sendButtonRect);
+		window.draw(sendButton);
 		if (chat.size() > 25) {
 			float percentageOfScollMovement = static_cast<float>(lineOffSetByScrolling) / (static_cast<float>(chat.size()) - 25.f);
 			float yOffsetScrollbar = static_cast<float>(maxScrollPosition) - (percentageOfScollMovement * static_cast<float>(scrollSpace));
