@@ -40,7 +40,8 @@ void server(int port) {
 	sf::SocketSelector selector;
 	bool done = false;
 	std::vector<connectedPlayers> clients;
-	sf::Time serverTime;
+	sf::Clock clock;
+	sf::Time serverTime = clock.getElapsedTime();
 	sf::Int32 lastPingSent = 0;
 	sf::Packet pingPacket;
 	sf::Uint8 pingPacketHeader = dataType::Ping;
@@ -55,6 +56,7 @@ void server(int port) {
 	selector.add(listener);
 
 	while (!done) {
+		sf::Time serverTime = clock.getElapsedTime();
 		if (selector.wait()) {
 			if (selector.isReady(listener)) {
 				if (clientsConnected < maxClients) {
@@ -203,10 +205,11 @@ void server(int port) {
 					for (int j = 0; j < clients.size(); j++) {
 						clients[j].playerSocket->send(sendPacket);
 					}
+
+					
 				}
 
 				if (serverTime.asMilliseconds() > lastPingSent + 100) {
-
 					pingPacket.clear();
 					pingPacket << pingPacketHeader;
 					for (int i = 0; i < clients.size(); i++) {
@@ -214,9 +217,9 @@ void server(int port) {
 					}
 					for (int j = 0; j < clients.size(); j++) {
 						clients[j].playerSocket->send(pingPacket);
+						clients[j].lastPingPacketSend = serverTime.asMilliseconds();
 					}
 				}
-
 			}
 		}
 	}
