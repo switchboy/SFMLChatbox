@@ -254,6 +254,7 @@ void client(bool selfHosted, int port) {
 	sendButtonRect.setOutlineThickness(2);
 	sendButtonRect.setOutlineColor(sf::Color::White);
 	sendButtonRect.setPosition(1243 - sendButton.getLocalBounds().width, 1010);
+	bool scrollBarClicked = false;
 
 	bool textAreaSelected = false;
 
@@ -308,7 +309,7 @@ void client(bool selfHosted, int port) {
 
 	sf::RenderWindow window(sf::VideoMode(1920, 1080, 32), "ChatApp");
 	window.setFramerateLimit(60);
-
+	sf::Vector2i lastMousePosition = { -1,-1 };
 	while (window.isOpen()) {
 		unsigned textLine = 0;
 		window.clear(sf::Color::White);
@@ -350,7 +351,30 @@ void client(bool selfHosted, int port) {
 			sendButtonRect.setOutlineColor(sf::Color::White);
 		}
 
+		if (scrollBar.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition)) && !scrollBarClicked) {
+			scrollBar.setOutlineColor(sf::Color::Yellow);
+		}
+		else {
+			scrollBar.setOutlineColor(sf::Color::White);
+		}
 		sf::Event event;
+
+		if (scrollBarClicked) {
+			int newPosition = mousePosition.y - 12;
+			if (newPosition < minScrollPosition) {
+				newPosition = minScrollPosition;
+				lineOffSetByScrolling = chat.size() - 24;
+			}
+			else if (newPosition > maxScrollPosition) {
+				newPosition = maxScrollPosition;
+				lineOffSetByScrolling = 0;
+			} else{
+				scrollBar.setPosition(scrollBar.getPosition().x, newPosition);
+				float line = (static_cast<float>(chat.size()) - 25.f) * (static_cast<float>(newPosition) - static_cast<float>(minScrollPosition)) / (static_cast<float>(maxScrollPosition) - static_cast<float>(minScrollPosition));
+				lineOffSetByScrolling = chat.size() - 24 - line;
+			}
+		}
+
 		while (window.pollEvent(event)) {
 			switch (event.type) {
 
@@ -378,6 +402,15 @@ void client(bool selfHosted, int port) {
 						if (lineOffSetByScrolling < 0) {
 							lineOffSetByScrolling = 0;
 						}
+					}
+				}
+				break;
+
+			case event.MouseButtonPressed:
+				if (event.mouseButton.button == sf::Mouse::Left) {
+					if (scrollBar.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+						scrollBar.setFillColor(sf::Color::Yellow);
+						scrollBarClicked = true;
 					}
 				}
 				break;
@@ -415,6 +448,8 @@ void client(bool selfHosted, int port) {
 						else {
 							textAreaSelected = false;
 						}
+						scrollBar.setFillColor(sf::Color(46, 99, 110, 255));
+						scrollBarClicked = false;
 					}
 					break;
 					
@@ -584,7 +619,6 @@ void client(bool selfHosted, int port) {
 			window.draw(up);
 			window.draw(down);
 		}
-
 		window.display();
 	}
 }
