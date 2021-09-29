@@ -254,7 +254,6 @@ void client(bool selfHosted, int port) {
 	sendButtonRect.setOutlineThickness(2);
 	sendButtonRect.setOutlineColor(sf::Color::White);
 	sendButtonRect.setPosition(1243 - sendButton.getLocalBounds().width, 1010);
-	int maxChar = 111;
 	bool scrollBarClicked = false;
 
 	bool textAreaSelected = false;
@@ -472,9 +471,10 @@ void client(bool selfHosted, int port) {
 				break;
 
 			case sf::Event::TextEntered:
-				if (textAreaSelected && text.size() < maxChar) {
+				if (textAreaSelected) {
 					if (event.text.unicode != '\b') {
 						if (event.text.unicode != '\r') {
+							if(sf::Text(id+": "+text, font, 20).getLocalBounds().width < sendTextBackground.getLocalBounds().width)
 							text += event.text.unicode;
 						}
 					}
