@@ -389,6 +389,23 @@ void client(bool selfHosted, int port) {
 						}
 					}
 					break;
+					
+			case sf::Event::MouseWheelMoved:
+				if (chat.size() > 25) {
+					if (event.mouseWheel.delta > 0) {
+						lineOffSetByScrolling++;
+						if (lineOffSetByScrolling > chat.size() - 25) {
+							lineOffSetByScrolling = chat.size() - 24;
+						}
+					}
+					else {
+						lineOffSetByScrolling--;
+						if (lineOffSetByScrolling < 0) {
+							lineOffSetByScrolling = 0;
+						}
+					}
+				}
+				break;
 
 			case sf::Event::TextEntered:
 				if (textAreaSelected) {
