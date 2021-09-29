@@ -8,6 +8,7 @@ enum dataType {
 	Text,
 	UserList,
 	MessageStatus,
+	Ping
 };
 
 const sf::Color teamColors[] =
@@ -22,6 +23,14 @@ const sf::Color teamColors[] =
 	{127, 127, 127}
 };
 
+struct connectedPlayers {
+	sf::TcpSocket* playerSocket;
+	std::string name;
+	sf::IpAddress remoteIp;
+	sf::Int32 lastPing;
+	sf::Int32 lastPingPacketSend;
+};
+
 void server(int port) {
 	const int maxClients = 8;
 	int clientsConnected = 0;
@@ -32,8 +41,7 @@ void server(int port) {
 
 	bool done = false;
 
-	std::vector<sf::TcpSocket*> clients;
-	std::vector<std::string> clientNames;
+	std::vector<connectedPlayers> clients;
 
 	while(listener.listen(port) != sf::Socket::Done) {
 		std::cout << "Failed to open port " << port << std::endl;
@@ -45,7 +53,14 @@ void server(int port) {
 	std::cout << "listening on port: " << port << std::endl;
 
 	selector.add(listener);
-	std::cout << "Waiting for incoming connections" << std::endl;
+
+	sf::Time serverTime;
+	sf::Int32 lastPingSent = 0;
+	sf::Packet pingPacket;
+	sf::Uint8 pingPacketHeader = dataType::Ping;
+	pingPacket << pingPacketHeader;
+
+
 
 	while (!done) {
 		if (selector.wait()) {
@@ -74,26 +89,28 @@ void server(int port) {
 					sf::Uint8 header = dataType::Text;
 
 					newUserJoined << header << i << newUserText;
-					for (sf::TcpSocket* client : clients) {
-						client->send(newUserJoined);
+					for (connectedPlayers& client : clients) {
+						client.playerSocket->send(newUserJoined);
 					}
 
 					newUserJoined.clear();
 					std::string welcomeText = "Welcome to the server " + id + "!";
 					newUserJoined << header << i << welcomeText;
 					socket->send(newUserJoined);
-					clients.push_back(socket);
-					clientNames.push_back(id);
+
+					clients.push_back({ socket, id, socket->getRemoteAddress() , 0, serverTime.asMilliseconds() });
+
+					socket->send(pingPacket);
 					selector.add(*socket);
 
 					sf::Packet userListPacket;
 					sf::Uint8 userListPacketHeader = dataType::UserList;
 					userListPacket << userListPacketHeader << static_cast<int>(clients.size());
-					for (std::string& username : clientNames) {
-						userListPacket << username;
+					for (connectedPlayers& client : clients) {
+						userListPacket << client.name;
 					}
-					for (sf::TcpSocket* client : clients) {
-						client->send(userListPacket);
+					for (connectedPlayers& client : clients) {
+						client.playerSocket->send(userListPacket);
 					}
 
 				}
@@ -110,37 +127,42 @@ void server(int port) {
 			else {
 				std::vector<int> clientsDisconnected;
 				for (int i = 0; i < clients.size(); i++) {
-					if (selector.isReady(*clients[i])) {
+					if (selector.isReady(*clients[i].playerSocket)) {
 						sf::Packet packet, sendPacket, confirmPacket;
-						if (clients[i]->receive(packet) == sf::Socket::Done) {
+						if (clients[i].playerSocket->receive(packet) == sf::Socket::Done) {
 							sf::Uint8 recievedHeader;
 							packet >> recievedHeader;
 							switch (recievedHeader) {
 							case dataType::Text:
+							{
 								std::string text;
 								packet >> text;
 								sf::Uint8 header = dataType::Text;
 								sendPacket << header << i << text;
 								for (int j = 0; j < clients.size(); j++) {
-									if (i != j) {
-										clients[j]->send(sendPacket);
-									}
+									clients[j].playerSocket->send(sendPacket);
 								}
 								sf::Uint8 headerCFM = dataType::MessageStatus;
 								bool isSentToAll = true;
 								confirmPacket << headerCFM << isSentToAll;
-								clients[i]->send(confirmPacket);
+								clients[i].playerSocket->send(confirmPacket);
 								break;
+							}
+
+							case dataType::Ping:
+							{
+								clients[i].lastPing = serverTime.asMilliseconds() - clients[i].lastPingPacketSend;
+							}
 							} 
 						}
-						else if (clients[i]->receive(packet) == sf::Socket::Disconnected) {
+						else if (clients[i].playerSocket->receive(packet) == sf::Socket::Disconnected) {
 							clientsDisconnected.push_back(i);
 							sf::Uint8 header = dataType::Text;
-							std::string text = clientNames[i] +" disconnected!";
+							std::string text = clients[i].name +" disconnected!";
 							sendPacket << header << -1 << text;
 							for (int j = 0; j < clients.size(); j++) {
 								if (i != j) {
-									clients[j]->send(sendPacket);
+									clients[j].playerSocket->send(sendPacket);
 								}
 							}
 						}
@@ -148,31 +170,46 @@ void server(int port) {
 				}
 				for (int& clientId : clientsDisconnected) {
 					clients.erase(clients.begin() + clientId);
-					clientNames.erase(clientNames.begin() + clientId);
 					clientsConnected--;
 					sf::Packet userListPacket;
 					sf::Uint8 userListPacketHeader = dataType::UserList;
 					userListPacket << userListPacketHeader << static_cast<int>(clients.size());
-					for (std::string& username : clientNames) {
-						userListPacket << username;
+					for (connectedPlayers& client : clients) {
+						userListPacket << client.name;
 					}
-					for (sf::TcpSocket* client : clients) {
-						client->send(userListPacket);
+					for (connectedPlayers& client : clients) {
+						client.playerSocket->send(userListPacket);
 					}
 				}
+
+				if (serverTime.asMilliseconds() > lastPingSent + 100) {
+
+					pingPacket.clear();
+					pingPacket << pingPacketHeader;
+					for (int i = 0; i < clients.size(); i++) {
+						pingPacket << clients[i].lastPing;
+					}
+					for (int j = 0; j < clients.size(); j++) {
+						clients[j].playerSocket->send(pingPacket);
+					}
+				}
+
 			}
 		}
 	}
 }
 
-
+struct playersClient {
+	std::string name;
+	sf::Int32 lastPing;
+};
 
 void client(bool selfHosted, int port) {
 	std::vector<sf::Text>chat;
 	std::string ipString;
 	std::string id;
 	std::string text = "";
-	std::vector<std::string> userList;
+	std::vector<playersClient> playerList;
 
 	if (selfHosted) {
 		ipString = "127.0.0.1";
@@ -255,14 +292,31 @@ void client(bool selfHosted, int port) {
 	scrollBar.setFillColor(sf::Color(46, 99, 110, 255));
 	scrollBar.setSize(sf::Vector2f(25, 25));
 	scrollBar.setOutlineThickness(2);
-	scrollBar.setOutlineColor(sf::Color::Black);
-	int minScrollPosition = 492;
-	int maxScrollPosition = 981;
-	int scrollSpace = 489;
+	scrollBar.setOutlineColor(sf::Color::White);
+	int minScrollPosition = 516;
+	int maxScrollPosition = 957;
+	int scrollSpace = 441;
 	int drawableLines = 25;
 	int lineOffSetByScrolling = 0;
+	sf::CircleShape up(14, 3);
+	up.setFillColor(sf::Color(46, 99, 110, 255));
+	up.setPosition(1217, 492);
+	up.setOutlineThickness(2);
+	up.setOutlineColor(sf::Color::White);
+	sf::CircleShape down(14, 3);
+	down.setFillColor(sf::Color(46, 99, 110, 255));
+	down.setPosition(1245, 1006);
+	down.setOutlineThickness(2);
+	down.setOutlineColor(sf::Color::White);
+	down.setRotation(180);
+	sf::Packet pingPacket;
+	sf::Uint8 pingPacketHeader = dataType::Ping;
+	pingPacket << pingPacketHeader;
+
+	bool textAreaSelected = false;
 	
-	
+	window.setFramerateLimit(60);
+
 	while (window.isOpen()) {
 		unsigned textLine = 0;
 		window.clear(sf::Color::White);
@@ -270,24 +324,51 @@ void client(bool selfHosted, int port) {
 		window.draw(overlay);
 		window.draw(chatWindow);
 		window.draw(playerWindow);
-		window.draw(sendTextBackground);
-		
+
+	
 		sf::Event event;
 		sf::Packet textPacket;
 
 		while (window.pollEvent(event)) {
+			sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
+
+			if (up.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+				up.setFillColor(sf::Color::Yellow);
+				down.setFillColor(sf::Color(46, 99, 110, 255));
+			}
+			else if (down.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+				up.setFillColor(sf::Color(46, 99, 110, 255));
+				down.setFillColor(sf::Color::Yellow);
+			}
+			else {
+				up.setFillColor(sf::Color(46, 99, 110, 255));
+				down.setFillColor(sf::Color(46, 99, 110, 255));
+			}
+
+
+
+			if (textAreaSelected) {
+				sendTextBackground.setOutlineColor(sf::Color::Yellow);
+			}
+			else {
+				if (sendTextBackground.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+					sendTextBackground.setOutlineColor(sf::Color::Red);
+				}
+				else {
+					sendTextBackground.setOutlineColor(sf::Color::White);
+				}
+			}
+
+
 			switch (event.type) {
 			case sf::Event::KeyPressed:
 				if (event.key.code == sf::Keyboard::Escape || event.Closed) {
 					window.close();
 				}
-				else if (event.key.code == sf::Keyboard::Return) {
+				else if (event.key.code == sf::Keyboard::Return && textAreaSelected) {
 					sf::Uint8 header = dataType::Text;
 					textPacket << header << text;
 					socket.send(textPacket);
-					sf::Text displayText(text, font, 20);
-					displayText.setFillColor(sf::Color::Red);
-					chat.push_back(displayText);
 					text = "";
 				}
 				else if (event.key.code == sf::Keyboard::Up) {
@@ -306,15 +387,44 @@ void client(bool selfHosted, int port) {
 					}
 				}
 				break;
-			case sf::Event::TextEntered:
-				if (event.text.unicode != '\b') {
-					if (event.text.unicode != '\r') {
-						text += event.text.unicode;
+			case event.MouseButtonReleased:
+					if (event.mouseButton.button == sf::Mouse::Left) {
+						if (sendTextBackground.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+							textAreaSelected = true;
+						} else if (up.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+							if (chat.size() >= 25) {
+								lineOffSetByScrolling++;
+								if (lineOffSetByScrolling > chat.size() - 25) {
+									lineOffSetByScrolling = chat.size() - 24;
+								}
+							}
+							textAreaSelected = false;
+						}
+						else if (down.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+							if (chat.size() >= 25) {
+								lineOffSetByScrolling--;
+								if (lineOffSetByScrolling < 0) {
+									lineOffSetByScrolling = 0;
+								}
+							}
+							textAreaSelected = false;
+						}
+						else {
+							textAreaSelected = false;
+						}
 					}
-				}
-				else {
-					if (!text.empty()) {
-						text.erase(text.size() - 1, 1);
+					break;
+			case sf::Event::TextEntered:
+				if (textAreaSelected) {
+					if (event.text.unicode != '\b') {
+						if (event.text.unicode != '\r') {
+							text += event.text.unicode;
+						}
+					}
+					else {
+						if (!text.empty()) {
+							text.erase(text.size() - 1, 1);
+						}
 					}
 				}
 				break;
@@ -357,8 +467,8 @@ void client(bool selfHosted, int port) {
 						chat.push_back(displayText);
 					}
 					else {
-						sf::Text displayText(userList[userId] + ": " + recievedText, font, 20);
-						displayText.setFillColor(sf::Color::Blue);
+						sf::Text displayText(playerList[userId].name + ": " + recievedText, font, 20);
+						displayText.setFillColor(teamColors[userId]);
 						chat.push_back(displayText);
 					}
 					break;
@@ -367,36 +477,55 @@ void client(bool selfHosted, int port) {
 					bool relayed;
 					recievePacket >> relayed;
 					if (relayed) {
-						chat.back().setFillColor(sf::Color::White);
+						//chat.back().setFillColor(sf::Color::White);
 					}
 					break;
 				case dataType::UserList:
-					userList.clear();
+					playerList.clear();
 					int numberOfUsers;
 					recievePacket >> numberOfUsers;
 					for (int i = 0; i < numberOfUsers; i++) {
 						std::string tempString;
 						recievePacket >> tempString;
-						userList.push_back(tempString);
+						playerList.push_back({ tempString, 0 });
+					}
+					break;
+				case dataType::Ping:
+					socket.send(pingPacket);
+					for (playersClient& player : playerList) {
+						recievePacket >> player.lastPing;
 					}
 					break;
 			}
 		}
 
+		window.draw(sendTextBackground);
 		sf::Text playerWindowText("Players in lobby:", font, 20);
 		playerWindowText.setFillColor(sf::Color::White);
 		playerWindowText.setOutlineColor(sf::Color::Black);
 		playerWindowText.setOutlineThickness(2);
 		playerWindowText.setPosition(48, 48);
 		window.draw(playerWindowText);
+		sf::Text playerPingText("Ping:", font, 20);
+		playerPingText.setFillColor(sf::Color::White);
+		playerPingText.setOutlineColor(sf::Color::Black);
+		playerPingText.setOutlineThickness(2);
+		playerPingText.setPosition(1136, 48);
+		window.draw(playerPingText);
 		int playerCounter = 0;
-		for (std::string& player : userList) {
-			sf::Text playerWindowText(player, font, 20);
+		for (playersClient& player : playerList) {
+			sf::Text playerWindowText(player.name, font, 20);
 			playerWindowText.setFillColor(teamColors[playerCounter]);
 			playerWindowText.setOutlineColor(sf::Color::Black);
 			playerWindowText.setOutlineThickness(2);
 			playerWindowText.setPosition(48, 68+(20*playerCounter));
 			window.draw(playerWindowText);
+			sf::Text playerPingText(std::to_string(player.lastPing)+" ms", font, 20);
+			playerPingText.setFillColor(teamColors[playerCounter]);
+			playerPingText.setOutlineColor(sf::Color::Black);
+			playerPingText.setOutlineThickness(2);
+			playerPingText.setPosition(1136, 68 + (20 * playerCounter));
+			window.draw(playerPingText);
 			playerCounter++;
 		}
 
@@ -420,13 +549,19 @@ void client(bool selfHosted, int port) {
 		drawText.setOutlineThickness(2);
 		drawText.setPosition(48, 1010);
 		window.draw(drawText);
-		float percentageOfScollMovement = static_cast<float>(lineOffSetByScrolling) / (static_cast<float>(chat.size()) - 25.f);
-		float yOffsetScrollbar = static_cast<float>(maxScrollPosition) - (percentageOfScollMovement * static_cast<float>(scrollSpace));
-		if (yOffsetScrollbar < minScrollPosition) {
-			yOffsetScrollbar = minScrollPosition;
+
+		if (chat.size() > 25) {
+			float percentageOfScollMovement = static_cast<float>(lineOffSetByScrolling) / (static_cast<float>(chat.size()) - 25.f);
+			float yOffsetScrollbar = static_cast<float>(maxScrollPosition) - (percentageOfScollMovement * static_cast<float>(scrollSpace));
+			if (yOffsetScrollbar < minScrollPosition) {
+				yOffsetScrollbar = minScrollPosition;
+			}
+			scrollBar.setPosition(1218, floor(yOffsetScrollbar));
+			window.draw(scrollBar);
+			window.draw(up);
+			window.draw(down);
 		}
-		scrollBar.setPosition(1218, floor(yOffsetScrollbar));
-		window.draw(scrollBar);
+
 		window.display();
 	}
 }
