@@ -34,14 +34,15 @@ struct connectedPlayers {
 void server(int port) {
 	const int maxClients = 8;
 	int clientsConnected = 0;
-	std::cout << "Server starting" << std::endl;
-
 	sf::TcpListener listener;
 	sf::SocketSelector selector;
-
 	bool done = false;
-
 	std::vector<connectedPlayers> clients;
+	sf::Time serverTime;
+	sf::Int32 lastPingSent = 0;
+	sf::Packet pingPacket;
+	sf::Uint8 pingPacketHeader = dataType::Ping;
+	pingPacket << pingPacketHeader;
 
 	while(listener.listen(port) != sf::Socket::Done) {
 		std::cout << "Failed to open port " << port << std::endl;
@@ -49,18 +50,7 @@ void server(int port) {
 		std::cin >> port;
 		std::cout << "Server starting" << std::endl;
 	}
-
-	std::cout << "listening on port: " << port << std::endl;
-
 	selector.add(listener);
-
-	sf::Time serverTime;
-	sf::Int32 lastPingSent = 0;
-	sf::Packet pingPacket;
-	sf::Uint8 pingPacketHeader = dataType::Ping;
-	pingPacket << pingPacketHeader;
-
-
 
 	while (!done) {
 		if (selector.wait()) {
@@ -87,7 +77,6 @@ void server(int port) {
 					int i = -1;
 					std::string newUserText = id + " had joined the server!";
 					sf::Uint8 header = dataType::Text;
-
 					newUserJoined << header << i << newUserText;
 					for (connectedPlayers& client : clients) {
 						client.playerSocket->send(newUserJoined);
@@ -97,9 +86,7 @@ void server(int port) {
 					std::string welcomeText = "Welcome to the server " + id + "!";
 					newUserJoined << header << i << welcomeText;
 					socket->send(newUserJoined);
-
 					clients.push_back({ socket, id, socket->getRemoteAddress() , 0, serverTime.asMilliseconds() });
-
 					socket->send(pingPacket);
 					selector.add(*socket);
 
@@ -210,65 +197,8 @@ void client(bool selfHosted, int port) {
 	std::string id;
 	std::string text = "";
 	std::vector<playersClient> playerList;
-
-	if (selfHosted) {
-		ipString = "127.0.0.1";
-	}
-	else {	
-		std::cout << "Enter ip of the server to connect to" << std::endl;
-		std::cin >> ipString;
-		std::cout << "Enter a port to connect to" << std::endl;
-		std::cin >> port;
-	}
-
-	std::cout << "Enter nickname" << std::endl;
-	std::cin >> id;
-
-	sf::IpAddress ip = sf::IpAddress(ipString);
-	sf::TcpSocket socket;
-
-	while(socket.connect(ip, port) == sf::Socket::Error) {
-		std::cout << "Unable to connect!" << std::endl;
-		std::cout << "Enter ip of the server to connect to" << std::endl;
-		std::cin >> ipString;
-		std::cout << "Enter a port to connect to" << std::endl;
-		std::cin >> port;
-	}
-
-	sf::Packet packet;
-	packet << id;
-	socket.send(packet);
-
-	socket.setBlocking(true);
-	bool succesfullJoin;
-	sf::Packet joinPacket;
-	socket.receive(joinPacket);
-	joinPacket >> succesfullJoin;
-	if (!succesfullJoin) {
-		std::cout << "Could not join server, because the sever is full!" << std::endl;
-		std::cout << "Enter ip of the server to connect to" << std::endl;
-		std::cin >> ipString;
-		std::cout << "Enter a port to connect to" << std::endl;
-		std::cin >> port;
-		while (socket.connect(ip, port) == sf::Socket::Error) {
-			std::cout << "Unable to connect!" << std::endl;
-			std::cout << "Enter ip of the server to connect to" << std::endl;
-			std::cin >> ipString;
-			std::cout << "Enter a port to connect to" << std::endl;
-			std::cin >> port;
-		}
-	}
-
-	sf::RenderWindow window(sf::VideoMode(1920, 1080, 32), "ChatApp");
-
-	socket.setBlocking(false);
-
-	sf::Font font;
-	font.loadFromFile("fonts/SatellaRegular.ttf");
-
 	sf::Texture splashScreenTexture;
 	sf::Sprite splashScreenSprite;
-
 	splashScreenTexture.loadFromFile("textures/SplashScreen.png");
 	splashScreenSprite.setTexture(splashScreenTexture);
 	splashScreenSprite.setPosition(0, 0);
@@ -277,12 +207,12 @@ void client(bool selfHosted, int port) {
 	overlay.setSize(sf::Vector2f(1920, 1080));
 	overlay.setPosition(0, 0);
 	chatWindow.setFillColor(sf::Color(46, 99, 110, 204));
-	chatWindow.setSize(sf::Vector2f(1200,545));
-	chatWindow.setPosition(45,490);
+	chatWindow.setSize(sf::Vector2f(1200, 545));
+	chatWindow.setPosition(45, 490);
 	chatWindow.setOutlineThickness(2);
 	playerWindow.setFillColor(sf::Color(46, 99, 110, 204));
 	playerWindow.setSize(sf::Vector2f(1200, 400));
-	playerWindow.setPosition(45,45);
+	playerWindow.setPosition(45, 45);
 	playerWindow.setOutlineThickness(2);
 	sendTextBackground.setFillColor(sf::Color(46, 99, 110, 204));
 	sendTextBackground.setSize(sf::Vector2f(1200, 25));
@@ -312,9 +242,60 @@ void client(bool selfHosted, int port) {
 	sf::Packet pingPacket;
 	sf::Uint8 pingPacketHeader = dataType::Ping;
 	pingPacket << pingPacketHeader;
-
+	sf::Font font;
+	font.loadFromFile("fonts/SatellaRegular.ttf");
 	bool textAreaSelected = false;
-	
+
+	if (selfHosted) {
+		ipString = "127.0.0.1";
+	}
+	else {	
+		std::cout << "Enter ip of the server to connect to" << std::endl;
+		std::cin >> ipString;
+		std::cout << "Enter a port to connect to" << std::endl;
+		std::cin >> port;
+	}
+
+	std::cout << "Enter a nickname" << std::endl;
+	std::cin >> id;
+
+	sf::IpAddress ip = sf::IpAddress(ipString);
+	sf::TcpSocket socket;
+
+	while(socket.connect(ip, port) == sf::Socket::Error) {
+		std::cout << "Unable to connect!" << std::endl;
+		std::cout << "Enter ip of the server to connect to" << std::endl;
+		std::cin >> ipString;
+		std::cout << "Enter a port to connect to" << std::endl;
+		std::cin >> port;
+	}
+
+	sf::Packet packet;
+	packet << id;
+	socket.send(packet);
+
+	socket.setBlocking(true);
+	bool succesfullJoin;
+	sf::Packet joinPacket;
+	socket.receive(joinPacket);
+	joinPacket >> succesfullJoin;
+	if (!succesfullJoin) {
+		std::cout << "Could not join server, because the sever is full!" << std::endl;
+		std::cout << "Enter ip of the server to connect to" << std::endl;
+		std::cin >> ipString;
+		//std::cout << "Enter a port to connect to" << std::endl;
+		//std::cin >> port;
+		while (socket.connect(ip, port) == sf::Socket::Error) {
+			std::cout << "Unable to connect!" << std::endl;
+			std::cout << "Enter ip of the server to connect to" << std::endl;
+			std::cin >> ipString;
+			//std::cout << "Enter a port to connect to" << std::endl;
+			//std::cin >> port;
+		}
+	}
+	socket.setBlocking(false);
+
+	sf::RenderWindow window(sf::VideoMode(1920, 1080, 32), "ChatApp");
 	window.setFramerateLimit(60);
 
 	while (window.isOpen()) {
@@ -324,48 +305,41 @@ void client(bool selfHosted, int port) {
 		window.draw(overlay);
 		window.draw(chatWindow);
 		window.draw(playerWindow);
+		sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
+		if (up.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+			up.setFillColor(sf::Color::Yellow);
+			down.setFillColor(sf::Color(46, 99, 110, 255));
+		}
+		else if (down.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+			up.setFillColor(sf::Color(46, 99, 110, 255));
+			down.setFillColor(sf::Color::Yellow);
+		}
+		else {
+			up.setFillColor(sf::Color(46, 99, 110, 255));
+			down.setFillColor(sf::Color(46, 99, 110, 255));
+		}
+		if (textAreaSelected) {
+			sendTextBackground.setOutlineColor(sf::Color::Yellow);
+		}
+		else {
+			if (sendTextBackground.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+				sendTextBackground.setOutlineColor(sf::Color::Red);
+			}
+			else {
+				sendTextBackground.setOutlineColor(sf::Color::White);
+			}
+		}
 
-	
 		sf::Event event;
-		sf::Packet textPacket;
-
 		while (window.pollEvent(event)) {
-			sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
-
-			if (up.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
-				up.setFillColor(sf::Color::Yellow);
-				down.setFillColor(sf::Color(46, 99, 110, 255));
-			}
-			else if (down.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
-				up.setFillColor(sf::Color(46, 99, 110, 255));
-				down.setFillColor(sf::Color::Yellow);
-			}
-			else {
-				up.setFillColor(sf::Color(46, 99, 110, 255));
-				down.setFillColor(sf::Color(46, 99, 110, 255));
-			}
-
-
-
-			if (textAreaSelected) {
-				sendTextBackground.setOutlineColor(sf::Color::Yellow);
-			}
-			else {
-				if (sendTextBackground.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
-					sendTextBackground.setOutlineColor(sf::Color::Red);
-				}
-				else {
-					sendTextBackground.setOutlineColor(sf::Color::White);
-				}
-			}
-
-
 			switch (event.type) {
+
 			case sf::Event::KeyPressed:
 				if (event.key.code == sf::Keyboard::Escape || event.Closed) {
 					window.close();
 				}
 				else if (event.key.code == sf::Keyboard::Return && textAreaSelected) {
+					sf::Packet textPacket;
 					sf::Uint8 header = dataType::Text;
 					textPacket << header << text;
 					socket.send(textPacket);
@@ -387,6 +361,7 @@ void client(bool selfHosted, int port) {
 					}
 				}
 				break;
+
 			case event.MouseButtonReleased:
 					if (event.mouseButton.button == sf::Mouse::Left) {
 						if (sendTextBackground.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
@@ -414,6 +389,7 @@ void client(bool selfHosted, int port) {
 						}
 					}
 					break;
+
 			case sf::Event::TextEntered:
 				if (textAreaSelected) {
 					if (event.text.unicode != '\b') {
@@ -428,6 +404,7 @@ void client(bool selfHosted, int port) {
 					}
 				}
 				break;
+
 			}
 		}
 
@@ -571,16 +548,14 @@ int main()
 	std::string whutDo;
 	std::cout << "Start as (S)erver or (C)lient?" <<std::endl;
 	std::cin >> whutDo;
+	int port = 8756;
 
 	if (whutDo == "s" || whutDo == "S") {
-		std::cout << "Enter a port for listening" << std::endl;
-		int port;
-		std::cin >> port;
 		sf::Thread serverThread(&server, port);
 		serverThread.launch();
 		client(true, port);
 	}
 	else if (whutDo == "c" || whutDo == "C") {
-		client(false, 0);
+		client(false, port);
 	}
 }
