@@ -8,7 +8,8 @@ enum dataType {
 	Text,
 	UserList,
 	MessageStatus,
-	Ping
+	Ping,
+	playerReady
 };
 
 const sf::Color teamColors[] =
@@ -29,6 +30,7 @@ struct connectedPlayers {
 	sf::IpAddress remoteIp;
 	sf::Int32 lastPing;
 	sf::Int32 lastPingPacketSend;
+	bool isReady;
 };
 
 void server(int port) {
@@ -86,18 +88,32 @@ void server(int port) {
 					std::string welcomeText = "Welcome to the server " + id + "!";
 					newUserJoined << header << i << welcomeText;
 					socket->send(newUserJoined);
-					clients.push_back({ socket, id, socket->getRemoteAddress() , 0, serverTime.asMilliseconds() });
+					clients.push_back({ socket, id, socket->getRemoteAddress() , 0, serverTime.asMilliseconds(), false });
 					socket->send(pingPacket);
 					selector.add(*socket);
 
-					sf::Packet userListPacket;
-					sf::Uint8 userListPacketHeader = dataType::UserList;
-					userListPacket << userListPacketHeader << static_cast<int>(clients.size());
-					for (connectedPlayers& client : clients) {
-						userListPacket << client.name;
+					{
+						sf::Packet userListPacket;
+						sf::Uint8 userListPacketHeader = dataType::UserList;
+						userListPacket << userListPacketHeader << static_cast<int>(clients.size());
+						for (connectedPlayers& client : clients) {
+							userListPacket << client.name;
+						}
+						for (connectedPlayers& client : clients) {
+							client.playerSocket->send(userListPacket);
+						}
 					}
-					for (connectedPlayers& client : clients) {
-						client.playerSocket->send(userListPacket);
+
+					{
+						sf::Packet sendPacket;
+						sf::Uint8 header = dataType::playerReady;
+						sendPacket << header;
+						for (int i = 0; i < clients.size(); i++) {
+							sendPacket << clients[i].isReady;
+						}
+						for (int j = 0; j < clients.size(); j++) {
+							clients[j].playerSocket->send(sendPacket);
+						}
 					}
 
 				}
@@ -137,9 +153,20 @@ void server(int port) {
 							}
 
 							case dataType::Ping:
-							{
 								clients[i].lastPing = serverTime.asMilliseconds() - clients[i].lastPingPacketSend;
-							}
+								break;
+							
+							case dataType::playerReady:
+								packet >> clients[i].isReady;
+								sf::Uint8 header = dataType::playerReady;
+								sendPacket << header;
+								for (int i = 0; i < clients.size(); i++) {
+									sendPacket << clients[i].isReady;
+								}
+								for (int j = 0; j < clients.size(); j++) {
+									clients[j].playerSocket->send(sendPacket);
+								}
+								break;
 							} 
 						}
 						else if (clients[i].playerSocket->receive(packet) == sf::Socket::Disconnected) {
@@ -189,9 +216,11 @@ void server(int port) {
 struct playersClient {
 	std::string name;
 	sf::Int32 lastPing;
+	bool isReady;
 };
 
 void client(bool selfHosted, int port) {
+	bool isReady;
 	std::vector<sf::Text>chat;
 	std::string ipString;
 	std::string id;
@@ -202,7 +231,7 @@ void client(bool selfHosted, int port) {
 	splashScreenTexture.loadFromFile("textures/SplashScreen.png");
 	splashScreenSprite.setTexture(splashScreenTexture);
 	splashScreenSprite.setPosition(0, 0);
-	sf::RectangleShape overlay, chatWindow, playerWindow, sendTextBackground, scrollBar, sendButtonRect;
+	sf::RectangleShape overlay, chatWindow, playerWindow, sendTextBackground, scrollBar, sendButtonRect, readyButtonRect, readyIcon;
 	overlay.setFillColor(sf::Color(95, 205, 228, 102));
 	overlay.setSize(sf::Vector2f(1920, 1080));
 	overlay.setPosition(0, 0);
@@ -255,7 +284,20 @@ void client(bool selfHosted, int port) {
 	sendButtonRect.setOutlineColor(sf::Color::White);
 	sendButtonRect.setPosition(1243 - sendButton.getLocalBounds().width, 1010);
 	bool scrollBarClicked = false;
-
+	sf::Text readyButton("Ready", font, 45);
+	readyButton.setOutlineColor(sf::Color::Black);
+	readyButton.setOutlineThickness(2);
+	readyButton.setFillColor(sf::Color::White);
+	readyButtonRect.setFillColor(sf::Color(46, 99, 110, 204));
+	readyButtonRect.setSize({(readyButton.getGlobalBounds().width + 15), 65 });
+	readyButtonRect.setOutlineThickness(2);
+	readyButtonRect.setOutlineColor(sf::Color::White);
+	readyButtonRect.setPosition( 1530, 280);
+	readyButton.setPosition(readyButtonRect.getPosition().x+9, readyButtonRect.getPosition().y+3);
+	bool playerReady = false;
+	readyIcon.setSize(sf::Vector2f(10, 10));
+	readyIcon.setOutlineThickness(2);
+	readyIcon.setOutlineColor(sf::Color::White);
 	bool textAreaSelected = false;
 
 	if (selfHosted) {
@@ -264,8 +306,8 @@ void client(bool selfHosted, int port) {
 	else {	
 		std::cout << "Enter ip of the server to connect to" << std::endl;
 		std::cin >> ipString;
-		std::cout << "Enter a port to connect to" << std::endl;
-		std::cin >> port;
+		//std::cout << "Enter a port to connect to" << std::endl;
+		//std::cin >> port;
 	}
 
 	std::cout << "Enter a nickname" << std::endl;
@@ -375,6 +417,13 @@ void client(bool selfHosted, int port) {
 			}
 		}
 
+		if (playerReady) {
+			readyButton.setFillColor(sf::Color::Green);
+		}
+		else {
+			readyButton.setFillColor(sf::Color::Red);
+		}
+
 		while (window.pollEvent(event)) {
 			switch (event.type) {
 
@@ -443,6 +492,14 @@ void client(bool selfHosted, int port) {
 							textPacket << header << text;
 							socket.send(textPacket);
 							text = "";
+							textAreaSelected = false;
+						}
+						else if(readyButtonRect.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
+							sf::Packet readyPacket;
+							playerReady = !playerReady;
+							sf::Uint8 header = dataType::playerReady;
+							readyPacket << header << playerReady;
+							socket.send(readyPacket);
 							textAreaSelected = false;
 						}
 						else {
@@ -554,6 +611,10 @@ void client(bool selfHosted, int port) {
 						recievePacket >> player.lastPing;
 					}
 					break;
+				case dataType::playerReady:
+					for (playersClient& player : playerList) {
+						recievePacket >> player.isReady;
+					}
 			}
 		}
 
@@ -572,11 +633,19 @@ void client(bool selfHosted, int port) {
 		window.draw(playerPingText);
 		int playerCounter = 0;
 		for (playersClient& player : playerList) {
+			readyIcon.setPosition(52, 8+68 + (20 * playerCounter));
+			if (player.isReady) {
+				readyIcon.setFillColor(sf::Color::Green);
+			}
+			else {
+				readyIcon.setFillColor(sf::Color::Red);
+			}
+			window.draw(readyIcon);
 			sf::Text playerWindowText(player.name, font, 20);
 			playerWindowText.setFillColor(teamColors[playerCounter]);
 			playerWindowText.setOutlineColor(sf::Color::Black);
 			playerWindowText.setOutlineThickness(2);
-			playerWindowText.setPosition(48, 68+(20*playerCounter));
+			playerWindowText.setPosition(72, 68+(20*playerCounter));
 			window.draw(playerWindowText);
 			sf::Text playerPingText(std::to_string(player.lastPing)+" ms", font, 20);
 			playerPingText.setFillColor(teamColors[playerCounter]);
@@ -609,6 +678,8 @@ void client(bool selfHosted, int port) {
 		window.draw(drawText);
 		window.draw(sendButtonRect);
 		window.draw(sendButton);
+		window.draw(readyButtonRect);
+		window.draw(readyButton);
 		if (chat.size() > 25) {
 			float percentageOfScollMovement = static_cast<float>(lineOffSetByScrolling) / (static_cast<float>(chat.size()) - 25.f);
 			float yOffsetScrollbar = static_cast<float>(maxScrollPosition) - (percentageOfScollMovement * static_cast<float>(scrollSpace));
