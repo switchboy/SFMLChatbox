@@ -145,10 +145,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="connection.h" />
+    <ClInclude Include="lobby.h" />
     <ClInclude Include="main.h" />
+    <ClInclude Include="server.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="connection.cpp" />
+    <ClCompile Include="lobby.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="server.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
