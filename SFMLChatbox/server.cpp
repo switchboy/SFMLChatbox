@@ -187,6 +187,7 @@ void server(int port) {
 						clients[j].playerSocket->send(pingPacket);
 						clients[j].lastPingPacketSend = serverTime.asMilliseconds();
 					}
+					lastPingSent = serverTime.asMilliseconds();
 				}
 			}
 		}
