@@ -9,6 +9,10 @@ enum class textBoxSelected {
 	None
 };
 
+struct errorMessage {
+	int timeAdded;
+	std::string error;
+};
 
 class connectionSetupScreen
 {
@@ -105,6 +109,13 @@ public:
 		joinButton.setOutlineColor(sf::Color::White);
 		joinButton.setPosition(joinLabel.getGlobalBounds().left - 3, joinLabel.getGlobalBounds().top-2);
 
+		errorText.setFont(this->font);
+		errorText.setCharacterSize(20);
+		errorText.setPosition(48, 550);
+		errorText.setFillColor(sf::Color::Red);
+		errorText.setOutlineThickness(2);
+		errorText.setOutlineColor(sf::Color::Black);
+
 	}
 	void showConnectionSetupScreen();
 	void interact();
@@ -116,10 +127,12 @@ private:
 	sf::Sprite splashScreenSprite;
 	sf::RectangleShape overlay, ipAdressInputField, portNumberInputField, playerNameInputField, hostButton, joinButton;
 	sf::Font font;
-	sf::Text ipAdressText, portNumberText, playerNameText, ipAdressLabel, portNumberLabel, playerNameLabel, hostLabel, joinLabel;
+	sf::Text ipAdressText, portNumberText, playerNameText, ipAdressLabel, portNumberLabel, playerNameLabel, hostLabel, joinLabel, errorText;
 	bool connectionEstablished = false;
 	textBoxSelected currentTextBoxSelected = textBoxSelected::None;
 	std::string ipAdressString, portNumberString, playerNameString;
-
+	std::vector<errorMessage> errorMessages;
+	sf::Clock clock;
+	sf::Time currentTime = clock.getElapsedTime();
 };
 

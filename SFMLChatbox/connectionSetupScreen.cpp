@@ -12,6 +12,7 @@ void connectionSetupScreen::showConnectionSetupScreen()
 
 void connectionSetupScreen::interact()
 {
+	currentTime = clock.getElapsedTime();
 	sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
 	detectMouseOvers(mousePosition);
 
@@ -50,22 +51,46 @@ void connectionSetupScreen::interact()
 					playerNameInputField.setOutlineColor(sf::Color::Yellow);
 				}
 				else if (hostButton.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
-					networkStuff::port = std::stoi(portNumberString);
-					serverThread.launch();
-					std::string ipString = "127.0.0.1";
-					sf::IpAddress ip = sf::IpAddress(ipString);
-					this->connectionEstablished = currentConnection.connect(ip, std::stoi(portNumberString), playerNameString);
-					if (!connectionEstablished) {
-
+					if (!portNumberString.empty()) {
+						if (!playerNameString.empty()) {
+							networkStuff::port = std::stoi(portNumberString);
+							serverThread.launch();
+							std::string ipString = "127.0.0.1";
+							sf::IpAddress ip = sf::IpAddress(ipString);
+							this->connectionEstablished = currentConnection.connect(ip, std::stoi(portNumberString), playerNameString);
+							if (!connectionEstablished) {
+								errorMessages.push_back({ currentTime.asMilliseconds(), "Can't connect to myself, this could be due to a firewall or inability to open the specified port!" });
+							}
+						}
+						else {
+							errorMessages.push_back({ currentTime.asMilliseconds(), "Please enter a nanme first!" });
+						}
+					}
+					else {
+						errorMessages.push_back({ currentTime.asMilliseconds(), "Please enter a port number first!" });
 					}
 				}
 				else if (joinButton.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
-					this->connectionEstablished = currentConnection.connect(ipAdressString, std::stoi(portNumberString), playerNameString);
-					if (!connectionEstablished) {
-
+					if (!ipAdressString.empty()) {
+						if (!portNumberString.empty()) {
+							if (!playerNameString.empty()) {
+								this->connectionEstablished = currentConnection.connect(ipAdressString, std::stoi(portNumberString), playerNameString);
+								if (!connectionEstablished) {
+									errorMessages.push_back({ currentTime.asMilliseconds(), "Can't connect to remote server!!! Check IP, Port and firewall/NAT settings" });
+								}
+							}
+							else {
+								errorMessages.push_back({ currentTime.asMilliseconds(), "Please enter a nanme first!" });
+							}
+						}
+						else {
+							errorMessages.push_back({ currentTime.asMilliseconds(), "Please enter a port number first!" });
+						}
+					}
+					else {
+						errorMessages.push_back({ currentTime.asMilliseconds(), "Please enter a IPv4 adress first!" });
 					}
 				}
-
 			}
 			break;
 
@@ -118,6 +143,18 @@ void connectionSetupScreen::interact()
 		}
 	}
 
+	errorMessages.erase(std::remove_if(
+		errorMessages.begin(), errorMessages.end(),
+		[this](const errorMessage& mess) {
+			if (mess.timeAdded + 10000 < currentTime.asMilliseconds()) {
+				return true;
+			}
+			else {
+				return false;
+			}
+		}), errorMessages.end());
+
+		
 }
 
 void connectionSetupScreen::detectMouseOvers(sf::Vector2i& mousePosition)
@@ -181,5 +218,13 @@ void connectionSetupScreen::drawConnectionSetupScreen()
 	window.draw(playerNameText);
 	window.draw(hostLabel);
 	window.draw(joinLabel);
+
+	for (errorMessage& mess : errorMessages) {
+		errorText.setString(mess.error);
+		window.draw(errorText);
+		errorText.move(0, 30);
+	}
+	errorText.setPosition(48, 550);
+
 	window.display();
 }
