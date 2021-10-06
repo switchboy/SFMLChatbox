@@ -1,6 +1,6 @@
 #include "server.h"
 
-void server(int port) {
+void server() {
 	const int maxClients = 8;
 	int clientsConnected = 0;
 	sf::TcpListener listener;
@@ -14,10 +14,10 @@ void server(int port) {
 	sf::Uint8 pingPacketHeader = dataType::Ping;
 	pingPacket << pingPacketHeader;
 
-	while (listener.listen(port) != sf::Socket::Done) {
-		std::cout << "Failed to open port " << port << std::endl;
+	while (listener.listen(networkStuff::port) != sf::Socket::Done) {
+		std::cout << "Failed to open port " << networkStuff::port << std::endl;
 		std::cout << "Enter a port for listening" << std::endl;
-		std::cin >> port;
+		std::cin >> networkStuff::port;
 		std::cout << "Server starting" << std::endl;
 	}
 	selector.add(listener);

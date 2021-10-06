@@ -207,6 +207,9 @@ void lobbyWindow::interact(sf::TcpSocket& socket) {
 
 		case event.MouseButtonReleased:
 			if (event.mouseButton.button == sf::Mouse::Left) {
+				textAreaSelected = false;
+				scrollBar.setFillColor(sf::Color(46, 99, 110, 255));
+				scrollBarClicked = false;
 				if (sendTextBackground.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
 					textAreaSelected = true;
 				}
@@ -217,7 +220,6 @@ void lobbyWindow::interact(sf::TcpSocket& socket) {
 							lineOffSetByScrolling = chat.size() - 24;
 						}
 					}
-					textAreaSelected = false;
 				}
 				else if (down.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
 					if (chat.size() >= 25) {
@@ -226,7 +228,6 @@ void lobbyWindow::interact(sf::TcpSocket& socket) {
 							lineOffSetByScrolling = 0;
 						}
 					}
-					textAreaSelected = false;
 				}
 				else if (sendButton.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
 					sf::Packet textPacket;
@@ -234,7 +235,7 @@ void lobbyWindow::interact(sf::TcpSocket& socket) {
 					textPacket << header << text;
 					socket.send(textPacket);
 					text = "";
-					textAreaSelected = false;
+					
 				}
 				else if (readyButtonRect.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePosition))) {
 					sf::Packet readyPacket;
@@ -242,13 +243,7 @@ void lobbyWindow::interact(sf::TcpSocket& socket) {
 					sf::Uint8 header = dataType::playerReady;
 					readyPacket << header << playerReady;
 					socket.send(readyPacket);
-					textAreaSelected = false;
 				}
-				else {
-					textAreaSelected = false;
-				}
-				scrollBar.setFillColor(sf::Color(46, 99, 110, 255));
-				scrollBarClicked = false;
 			}
 			break;
 
@@ -370,4 +365,13 @@ void lobbyWindow::setId(std::string id)
 bool lobbyWindow::isDone() const
 {
 	return this->done;
+}
+
+void lobbyWindow::showLobby()
+{
+	while (!this->isDone()) {
+		this->interact(*currentConnection.getTcpSocket());
+		this->pollConnectionAndGetUpdate(*currentConnection.getTcpSocket());
+		this->drawLobby();
+	}
 }

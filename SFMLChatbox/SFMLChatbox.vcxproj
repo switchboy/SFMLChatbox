@@ -146,12 +146,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="connection.h" />
+    <ClInclude Include="connectionSetupScreen.h" />
     <ClInclude Include="lobby.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="server.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="connection.cpp" />
+    <ClCompile Include="connectionSetupScreen.cpp" />
     <ClCompile Include="lobby.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="server.cpp" />

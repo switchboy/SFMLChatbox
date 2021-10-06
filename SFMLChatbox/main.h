@@ -3,6 +3,7 @@
 #include <SFML/Network.hpp>
 #include <iostream>
 #include <string>
+#include "server.h"
 
 enum dataType {
 	Text,
@@ -40,5 +41,8 @@ struct playersClient {
 };
 
 extern sf::RenderWindow window;
-
+extern sf::Thread serverThread;
+namespace networkStuff {
+	extern int port;
+}
 

@@ -1,5 +1,6 @@
 #pragma once
 #include "main.h"
+#include "connection.h"
 
 class lobbyWindow {
 public:
@@ -77,6 +78,7 @@ public:
 	void pollConnectionAndGetUpdate(sf::TcpSocket& socket);
 	void setId(std::string id);
 	bool isDone() const;
+	void showLobby();
 	
 
 
